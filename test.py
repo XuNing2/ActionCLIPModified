@@ -8,7 +8,6 @@ import torch.nn as nn
 from datasets import Action_DATASETS
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-import wandb
 import argparse
 import shutil
 from pathlib import Path
@@ -69,8 +68,6 @@ def validate(epoch, val_loader, classes, device, model, fusion_model, config, nu
                     corr_5 += 1
     top1 = float(corr_1) / num * 100
     top5 = float(corr_5) / num * 100
-    wandb.log({"top1": top1})
-    wandb.log({"top5": top5})
     print('Epoch: [{}/{}]: Top1: {}, Top5: {}'.format(epoch, config.solver.epochs, top1, top5))
     return top1
 
@@ -86,9 +83,7 @@ def main():
         config = yaml.safe_load(f)
     working_dir = os.path.join('./exp', config['network']['type'], config['network']['arch'], config['data']['dataset'],
                                args.log_time)
-    wandb.init(project=config['network']['type'],
-               name='{}_{}_{}_{}'.format(args.log_time, config['network']['type'], config['network']['arch'],
-                                         config['data']['dataset']))
+ 
     print('-' * 80)
     print(' ' * 20, "working dir: {}".format(working_dir))
     print('-' * 80)
@@ -121,8 +116,7 @@ def main():
     model_text = torch.nn.DataParallel(model_text).cuda()
     model_image = torch.nn.DataParallel(model_image).cuda()
     fusion_model = torch.nn.DataParallel(fusion_model).cuda()
-    wandb.watch(model)
-    wandb.watch(fusion_model)
+
 
     val_data = Action_DATASETS(config.data.val_list, config.data.label_list, num_segments=config.data.num_segments,
                         image_tmpl=config.data.image_tmpl,
