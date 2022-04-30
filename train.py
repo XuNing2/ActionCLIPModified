@@ -3,6 +3,7 @@
 # Mengmeng Wang, Jiazheng Xing, Yong Liu
 
 import os
+# os.environ["CUDA_VISIBLE_DEVICES"] = "7"
 import torch.nn as nn
 from datasets import Action_DATASETS
 from torch.utils.data import DataLoader
@@ -43,13 +44,14 @@ def main():
     global args, best_prec1
     global global_step
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', '-cfg', default='')
-    parser.add_argument('--log_time', default='')
+    parser.add_argument('--config', '-cfg', default='/home/cike/projects/ActionCLIPModified/configs/ucf101/ucf_train.yaml')
+    import time
+    log_time = time.strftime("%Y%m%d_%H%M%S", time.localtime())
+    parser.add_argument('--log_time', default=log_time)
     args = parser.parse_args()
     with open(args.config, 'r') as f:
         config = yaml.safe_load(f)
     working_dir = os.path.join('./exp', config['network']['type'], config['network']['arch'], config['data']['dataset'], args.log_time)
-    wandb.init(project=config['network']['type'],name='{}_{}_{}_{}'.format(args.log_time,config['network']['type'], config['network']['arch'], config['data']['dataset']))
     print('-' * 80)
     print(' ' * 20, "working dir: {}".format(working_dir))
     print('-' * 80)
@@ -68,7 +70,8 @@ def main():
 
     device = "cuda" if torch.cuda.is_available() else "cpu" # If using GPU then use mixed precision training.
 
-    model, clip_state_dict = clip.load(config.network.arch,device=device,jit=False) #Must set jit=False for training  ViT-B/32
+    model, preprocess = clip.load(config.network.arch,device=device,jit=False) #Must set jit=False for training  ViT-B/32
+    clip_state_dict=model.state_dict()
 
     transform_train = get_augmentation(True,config)
     transform_val = get_augmentation(False,config)
@@ -86,8 +89,6 @@ def main():
     model_text = torch.nn.DataParallel(model_text).cuda()
     model_image = torch.nn.DataParallel(model_image).cuda()
     fusion_model = torch.nn.DataParallel(fusion_model).cuda()
-    wandb.watch(model)
-    wandb.watch(fusion_model)
 
     train_data = Action_DATASETS(config.data.train_list,config.data.label_list,num_segments=config.data.num_segments,image_tmpl=config.data.image_tmpl,random_shift=config.data.random_shift,
                        transform=transform_train)
@@ -108,28 +109,6 @@ def main():
 
     start_epoch = config.solver.start_epoch
     
-    if config.pretrain:
-        if os.path.isfile(config.pretrain):
-            print(("=> loading checkpoint '{}'".format(config.pretrain)))
-            checkpoint = torch.load(config.pretrain)
-            model.load_state_dict(checkpoint['model_state_dict'])
-            fusion_model.load_state_dict(checkpoint['fusion_model_state_dict'])
-            del checkpoint
-        else:
-            print(("=> no checkpoint found at '{}'".format(config.resume)))
-    
-    if config.resume:
-        if os.path.isfile(config.resume):
-            print(("=> loading checkpoint '{}'".format(config.resume)))
-            checkpoint = torch.load(config.resume)
-            model.load_state_dict(checkpoint['model_state_dict'])
-            fusion_model.load_state_dict(checkpoint['fusion_model_state_dict'])
-            start_epoch = checkpoint['epoch']
-            print(("=> loaded checkpoint '{}' (epoch {})"
-                   .format(config.evaluate, start_epoch)))
-            del checkpoint
-        else:
-            print(("=> no checkpoint found at '{}'".format(config.pretrain)))
 
     classes, num_text_aug, text_dict = text_prompt(train_data)
 
@@ -171,16 +150,14 @@ def main():
                 text_embedding.detach_()
 
             logit_scale = model.logit_scale.exp()
+            # 计算相似性
             logits_per_image, logits_per_text = create_logits(image_embedding,text_embedding,logit_scale)
 
             ground_truth = torch.tensor(gen_label(list_id),dtype=image_embedding.dtype,device=device)
             loss_imgs = loss_img(logits_per_image,ground_truth)
             loss_texts = loss_txt(logits_per_text,ground_truth)
             total_loss = (loss_imgs + loss_texts)/2
-            wandb.log({"train_total_loss": total_loss})
-            wandb.log({"train_loss_imgs": loss_imgs})
-            wandb.log({"train_loss_texts": loss_texts})
-            wandb.log({"lr": optimizer.param_groups[0]['lr']})
+
             total_loss.backward()
 
             if device == "cpu":

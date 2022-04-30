@@ -10,3 +10,4 @@ thumb.sdb
 .idea
 wandb/
 trained_models/
+nohup.out
