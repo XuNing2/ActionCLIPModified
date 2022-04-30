@@ -1,4 +1,4 @@
-pretrain:  '/public/home/ock/video_clip/video-clip/clip_models/vit16_8f/model_best.pt'
+pretrain:  
 resume:
 seed: 1024
 data:
@@ -8,7 +8,7 @@ data:
     seg_length: 1
     split: 1
     batch_size: 32
-    workers: 8
+    workers: 1
     gpus: 2
     num_classes: 101
     image_tmpl: 'img_{:05d}.jpg'
@@ -18,8 +18,8 @@ data:
     index_bias: 1
     input_size: 224
     randaug:
-        N: 0 #2
-        M: 0  #9
+        N: 2 #2
+        M: 9  #9
 network:
     arch: ViT-B/16  #ViT-B/32 ViT-B/16
     init: True  

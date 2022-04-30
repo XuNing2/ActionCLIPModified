@@ -47,7 +47,7 @@ def main():
     parser.add_argument('--log_time', default='')
     args = parser.parse_args()
     with open(args.config, 'r') as f:
-        config = yaml.load(f)
+        config = yaml.safe_load(f)
     working_dir = os.path.join('./exp', config['network']['type'], config['network']['arch'], config['data']['dataset'], args.log_time)
     wandb.init(project=config['network']['type'],name='{}_{}_{}_{}'.format(args.log_time,config['network']['type'], config['network']['arch'], config['data']['dataset']))
     print('-' * 80)
@@ -68,7 +68,7 @@ def main():
 
     device = "cuda" if torch.cuda.is_available() else "cpu" # If using GPU then use mixed precision training.
 
-    model, clip_state_dict = clip.load(config.network.arch,device=device,jit=False, tsm=config.network.tsm, T=config.data.num_segments,dropout=config.network.drop_out, emb_dropout=config.network.emb_dropout,pretrain=config.network.init, joint = config.network.joint) #Must set jit=False for training  ViT-B/32
+    model, clip_state_dict = clip.load(config.network.arch,device=device,jit=False) #Must set jit=False for training  ViT-B/32
 
     transform_train = get_augmentation(True,config)
     transform_val = get_augmentation(False,config)
