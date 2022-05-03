@@ -3,7 +3,7 @@
 # Mengmeng Wang, Jiazheng Xing, Yong Liu
 
 import os
-# os.environ["CUDA_VISIBLE_DEVICES"] = "7"
+os.environ["CUDA_VISIBLE_DEVICES"] = "6"
 import torch.nn as nn
 from datasets import Action_DATASETS
 from torch.utils.data import DataLoader
@@ -52,6 +52,9 @@ def main():
     with open(args.config, 'r') as f:
         config = yaml.safe_load(f)
     working_dir = os.path.join('./exp', config['network']['type'], config['network']['arch'], config['data']['dataset'], args.log_time)
+    wandb.init(project=config['network']['type'],
+               name='{}_{}_{}_{}'.format(args.log_time, config['network']['type'], config['network']['arch'],
+                                         config['data']['dataset']))
     print('-' * 80)
     print(' ' * 20, "working dir: {}".format(working_dir))
     print('-' * 80)
@@ -89,6 +92,10 @@ def main():
     model_text = torch.nn.DataParallel(model_text).cuda()
     model_image = torch.nn.DataParallel(model_image).cuda()
     fusion_model = torch.nn.DataParallel(fusion_model).cuda()
+
+    # Hooks into the torch model to collect gradients and the topology.
+    wandb.watch(model)
+    wandb.watch(fusion_model)
 
     train_data = Action_DATASETS(config.data.train_list,config.data.label_list,num_segments=config.data.num_segments,image_tmpl=config.data.image_tmpl,random_shift=config.data.random_shift,
                        transform=transform_train)
@@ -157,6 +164,11 @@ def main():
             loss_imgs = loss_img(logits_per_image,ground_truth)
             loss_texts = loss_txt(logits_per_text,ground_truth)
             total_loss = (loss_imgs + loss_texts)/2
+
+            wandb.log({"train_total_loss": total_loss})
+            wandb.log({"train_loss_imgs": loss_imgs})
+            wandb.log({"train_loss_texts": loss_texts})
+            wandb.log({"lr": optimizer.param_groups[0]['lr']})
 
             total_loss.backward()
 
