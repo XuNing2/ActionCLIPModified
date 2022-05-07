@@ -1,4 +1,4 @@
-pretrain: 
+pretrain: /home/cike/projects/ActionCLIPModified/exp/clip_hmdb/ViT-B/16/hmdb51/20220507_073036/model_best.pt
 seed: 1024
 data:
     dataset: hmdb51
@@ -10,7 +10,7 @@ data:
     workers: 8
     num_classes: 51
     image_tmpl: 'img_{:05d}.jpg'
-    val_list: '/public/home/ock/video_clip/video-clip/lists/hmdb51/val_rgb_split1.txt'
+    val_list: '/home/cike/projects/ActionCLIPModified/lists/hmdb51/val_rgb_split1.txt'
     label_list: 'lists/hmdb51_labels.csv'
     index_bias: 1
     input_size: 224
@@ -23,7 +23,7 @@ network:
     drop_out: 0.0 
     emb_dropout: 0.0
     type: clip_hmdb
-    sim_header: "Transf"  #Transf   meanP   LSTM   Transf_cls Conv_1D
+    sim_header: "RNN"  #Transf   meanP   LSTM   Transf_cls Conv_1D
     fix_text: False
     fix_img: False
     describe:
