@@ -3,6 +3,7 @@
 # Mengmeng Wang, Jiazheng Xing, Yong Liu
 
 import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 import clip
 import torch.nn as nn
 from datasets import Action_DATASETS
@@ -86,7 +87,9 @@ def main():
         config = yaml.safe_load(f)
     working_dir = os.path.join('./exp', config['network']['type'], config['network']['arch'], config['data']['dataset'],
                                args.log_time)
- 
+    wandb.init(project=config['network']['type'],
+               name='{}_{}_{}_{}'.format(args.log_time, config['network']['type'], config['network']['arch'],
+                                         config['data']['dataset']))
     print('-' * 80)
     print(' ' * 20, "working dir: {}".format(working_dir))
     print('-' * 80)
@@ -105,10 +108,8 @@ def main():
 
     device = "cuda" if torch.cuda.is_available() else "cpu"  # If using GPU then use mixed precision training.
 
-    model, clip_state_dict = clip.load(config.network.arch, device=device, jit=False, tsm=config.network.tsm,
-                                                   T=config.data.num_segments, dropout=config.network.drop_out,
-                                                   emb_dropout=config.network.emb_dropout)  # Must set jit=False for training  ViT-B/32
-
+    model, clip_state_dict = clip.load(config.network.arch, device=device, jit=False)  # Must set jit=False for training  ViT-B/32
+    clip_state_dict = model.state_dict()
     transform_val = get_augmentation(False, config)
 
     fusion_model = visual_prompt(config.network.sim_header, clip_state_dict, config.data.num_segments)
@@ -119,7 +120,8 @@ def main():
     model_text = torch.nn.DataParallel(model_text).cuda()
     model_image = torch.nn.DataParallel(model_image).cuda()
     fusion_model = torch.nn.DataParallel(fusion_model).cuda()
-
+    wandb.watch(model)
+    wandb.watch(fusion_model)
 
     val_data = Action_DATASETS(config.data.val_list, config.data.label_list, num_segments=config.data.num_segments,
                         image_tmpl=config.data.image_tmpl,

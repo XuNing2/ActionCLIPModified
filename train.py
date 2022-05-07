@@ -3,7 +3,7 @@
 # Mengmeng Wang, Jiazheng Xing, Yong Liu
 
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "6"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "1,3,6,7"
 import torch.nn as nn
 from datasets import Action_DATASETS
 from torch.utils.data import DataLoader
@@ -44,7 +44,7 @@ def main():
     global args, best_prec1
     global global_step
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', '-cfg', default='/home/cike/projects/ActionCLIPModified/configs/ucf101/ucf_train.yaml')
+    parser.add_argument('--config', '-cfg', default='/home/cike/projects/ActionCLIPModified/configs/hmdb51/hmdb_train.yaml')
     import time
     log_time = time.strftime("%Y%m%d_%H%M%S", time.localtime())
     parser.add_argument('--log_time', default=log_time)
@@ -89,9 +89,9 @@ def main():
     fusion_model = visual_prompt(config.network.sim_header,clip_state_dict,config.data.num_segments)
     model_text = TextCLIP(model)
     model_image = ImageCLIP(model)
-    model_text = torch.nn.DataParallel(model_text).cuda()
-    model_image = torch.nn.DataParallel(model_image).cuda()
-    fusion_model = torch.nn.DataParallel(fusion_model).cuda()
+    model_text = torch.nn.DataParallel(model_text,device_ids=[1,3,6,7]).cuda()
+    model_image = torch.nn.DataParallel(model_image,device_ids=[1,3,6,7]).cuda()
+    fusion_model = torch.nn.DataParallel(fusion_model,device_ids=[1,3,6,7]).cuda()
 
     # Hooks into the torch model to collect gradients and the topology.
     wandb.watch(model)
