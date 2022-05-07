@@ -7,6 +7,7 @@ from torch import nn
 from collections import OrderedDict
 from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
 
+from linformer_pytorch import MHAttention,Linformer,LinearAttentionHead
 
 class LayerNorm(nn.Module):
     def __init__(self, hidden_size, eps=1e-12):
@@ -107,44 +108,87 @@ class TemporalTransformer(nn.Module):
     def forward(self, x: torch.Tensor):
         return self.resblocks((x))
 
+class NewNet(nn.Module):
+    def __init__(self, width: int, layers: int, heads: int, attn_mask: torch.Tensor = None):
+        super().__init__()
+        self.width = width
+        self.layers = layers
+        self.resblocks = nn.Sequential(*[ResidualAttentionBlock(width, heads, attn_mask) for _ in range(layers)])
+
+    def forward(self, x: torch.Tensor):
+        x_original = x
+        b, t, c = x.size()
+        seq_length = t
+        position_ids = torch.arange(seq_length, dtype=torch.long, device=x.device)
+        position_ids = position_ids.unsqueeze(0).expand(x.size(0), -1)
+        frame_position_embeddings = self.frame_position_embeddings(position_ids)
+        x = x + frame_position_embeddings
+
+        x = x.permute(1, 0, 2)  # NLD -> LND
+        return self.resblocks(x)
+
 
 class visual_prompt(nn.Module):
     def __init__(self, sim_head, clip_state_dict, T):
         super().__init__()
         self.sim_header = sim_head
         self.T = T
-        assert sim_head in ["meanP", "LSTM", "Transf", "Conv_1D", "Transf_cls"]
+        assert sim_head in ["meanP", "LSTM", "Transf", "Conv_1D", "Transf_cls","new_net","RNN"]
 
-        if self.sim_header == "LSTM" or self.sim_header == "Transf" or self.sim_header == "Transf_cls" or self.sim_header == "Conv_1D" :
-            embed_dim = clip_state_dict["text_projection"].shape[1]
-
+        if self.sim_header == "LSTM" or self.sim_header == "Transf" or self.sim_header == "Transf_cls" or self.sim_header == "Conv_1D" or self.sim_header == "new_net"\
+            or self.sim_header == "RNN":
+            self.embed_dim = clip_state_dict["text_projection"].shape[1]
             context_length = clip_state_dict["positional_embedding"].shape[0]
             vocab_size = clip_state_dict["token_embedding.weight"].shape[0]
             transformer_width = clip_state_dict["ln_final.weight"].shape[0]
             transformer_heads = transformer_width // 64
+            self.h = transformer_heads
 
             transformer_layers = len(
                 set(k.split(".")[2] for k in clip_state_dict if k.startswith(f"transformer.resblocks")))
 
-            self.frame_position_embeddings = nn.Embedding(context_length, embed_dim)
+            self.frame_position_embeddings = nn.Embedding(context_length, self.embed_dim)
         if self.sim_header == "Transf" :
-            self.transformer = TemporalTransformer(width=embed_dim, layers=6, heads=transformer_heads)
+            self.transformer = TemporalTransformer(width=self.embed_dim, layers=6, heads=transformer_heads)
             print('layer=6')
+        if self.sim_header == "new_net":
+            # self.new_net = Transformer(dim=embed_dim,heads=transformer_heads,dim_head=64,depth=6,mlp_dim=2048)
+            # self.new_net = DeepViT()
+            # 7x7 patches + 1 cls-token
+            self.new_net = Linformer(
+                input_size=self.embed_dim, # Dimension 1 of the input
+                channels=16, # Dimension 2 of the input
+                dim_d=128, # The inner dimension of the attention heads
+                dim_k=128, # The second dimension of the P_bar matrix from the paper
+                dim_ff=128, # Dimension in the feed forward network
+                dropout_ff=0.15, # Dropout for feed forward network
+                nhead=transformer_heads, # Number of attention heads
+                depth=2, # How many times to run the model
+                dropout=0.1, # How much dropout to apply to P_bar after softmax
+                activation="gelu", # What activation to use. Currently, only gelu and relu supported, and only on ff network.
+                checkpoint_level="C2", # What checkpoint level to use. For more information, see below.
+            )
+            # pass
         if self.sim_header == "LSTM":
-            self.lstm_visual = nn.LSTM(input_size=embed_dim, hidden_size=embed_dim,
+            self.lstm_visual = nn.LSTM(input_size=self.embed_dim, hidden_size=self.embed_dim,
                                        batch_first=True, bidirectional=False, num_layers=1)
+
+        if self.sim_header == "RNN":
+            self.rnn_visual = nn.RNN(input_size=self.embed_dim, hidden_size=self.embed_dim,
+                                       batch_first=True, bidirectional=False, num_layers=1)
+
 
         self.apply(self.init_weights)
 
         if self.sim_header == "Transf_cls":
-            self.transformer = TAggregate(clip_length=self.T, embed_dim=embed_dim, n_layers=6)
+            self.transformer = TAggregate(clip_length=self.T, embed_dim=self.embed_dim, n_layers=6)
 
         if self.sim_header == 'Conv_1D' :
-            self.shift = nn.Conv1d(embed_dim, embed_dim, 3, padding=1, groups=embed_dim, bias=False)
-            weight = torch.zeros(embed_dim, 1, 3)
-            weight[:embed_dim // 4, 0, 0] = 1.0
-            weight[embed_dim // 4:embed_dim // 4 + embed_dim // 2, 0, 1] = 1.0
-            weight[-embed_dim // 4:, 0, 2] = 1.0
+            self.shift = nn.Conv1d(self.embed_dim, self.embed_dim, 3, padding=1, groups=self.embed_dim, bias=False)
+            weight = torch.zeros(self.embed_dim, 1, 3)
+            weight[:self.embed_dim // 4, 0, 0] = 1.0
+            weight[self.embed_dim // 4:self.embed_dim // 4 + self.embed_dim // 2, 0, 1] = 1.0
+            weight[-self.embed_dim // 4:, 0, 2] = 1.0
             self.shift.weight = nn.Parameter(weight)
 
     def init_weights(self, module):
@@ -195,9 +239,37 @@ class visual_prompt(nn.Module):
             self.lstm_visual.flatten_parameters()
             x = torch.cat((x, x_original[:, x.size(1):, ...].contiguous()), dim=1)
             x = x.type(x_original.dtype) + x_original
+        elif self.sim_header == "RNN":
+            x_original = x
+            x, _ = self.rnn_visual(x.float())
+            self.rnn_visual.flatten_parameters()
+            x = torch.cat((x, x_original[:, x.size(1):, ...].contiguous()), dim=1)
+            x = x.type(x_original.dtype) + x_original
         elif self.sim_header == "Transf_cls":
             x_original = x
             return self.transformer(x).type(x_original.dtype)
+        elif self.sim_header == "new_net":
+            self.new_net = Linformer(
+                input_size=self.embed_dim, # Dimension 1 of the input
+                channels=b, # Dimension 2 of the input
+                dim_d=128, # The inner dimension of the attention heads
+                dim_k=128, # The second dimension of the P_bar matrix from the paper
+                dim_ff=128, # Dimension in the feed forward network
+                dropout_ff=0.15, # Dropout for feed forward network
+                nhead= self.h , # Number of attention heads
+                depth=2, # How many times to run the model
+                dropout=0.1, # How much dropout to apply to P_bar after softmax
+                activation="gelu", # What activation to use. Currently, only gelu and relu supported, and only on ff network.
+                checkpoint_level="C2", # What checkpoint level to use. For more information, see below.
+            ).cuda()
+            
+            x_original = x
+            x=x.permute(1,2,0)
+            y=self.new_net(x.float())
+            x=y
+
+            x=x.permute(2,0,1)
+            x = x.type(x_original.dtype) + x_original
 
         else:
             raise ValueError('Unknown optimizer: {}'.format(self.sim_header))
