@@ -167,7 +167,7 @@ class visual_prompt(nn.Module):
         if self.sim_header == "new_net":
             self.new_net = Linformer(
                 input_size=self.embed_dim, # Dimension 1 of the input
-                channels=16, # Dimension 2 of the input
+                channels=8, # Dimension 2 of the input
                 dim_d=128, # The inner dimension of the attention heads
                 dim_k=128, # The second dimension of the P_bar matrix from the paper
                 dim_ff=128, # Dimension in the feed forward network
@@ -281,7 +281,7 @@ class visual_prompt(nn.Module):
             x=x.permute(0,2,1)
             y=self.new_net(x.float())
             x=y
-            x=x.permute(0,1,2)
+            x=x.permute(0,2,1)
             x = x.type(x_original.dtype) + x_original
 
         else:
