@@ -3,7 +3,7 @@
 # Mengmeng Wang, Jiazheng Xing, Yong Liu
 
 import os
-# os.environ["CUDA_VISIBLE_DEVICES"] = "1,3,6,7"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1,6"
 import torch.nn as nn
 from datasets import Action_DATASETS
 from torch.utils.data import DataLoader
@@ -70,6 +70,7 @@ def main():
     Path(working_dir).mkdir(parents=True, exist_ok=True)
     shutil.copy(args.config, working_dir)
     shutil.copy('train.py', working_dir)
+    shutil.copy('modules/Visual_Prompt.py',working_dir)
 
     device = "cuda" if torch.cuda.is_available() else "cpu" # If using GPU then use mixed precision training.
 
@@ -89,9 +90,9 @@ def main():
     fusion_model = visual_prompt(config.network.sim_header,clip_state_dict,config.data.num_segments)
     model_text = TextCLIP(model)
     model_image = ImageCLIP(model)
-    model_text = torch.nn.DataParallel(model_text,device_ids=[1,3,6,7]).cuda()
-    model_image = torch.nn.DataParallel(model_image,device_ids=[1,3,6,7]).cuda()
-    fusion_model = torch.nn.DataParallel(fusion_model,device_ids=[1,3,6,7]).cuda()
+    model_text = torch.nn.DataParallel(model_text).cuda()
+    model_image = torch.nn.DataParallel(model_image).cuda()
+    fusion_model = torch.nn.DataParallel(fusion_model).cuda()
 
     # Hooks into the torch model to collect gradients and the topology.
     wandb.watch(model)

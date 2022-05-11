@@ -3,11 +3,14 @@
 # Mengmeng Wang, Jiazheng Xing, Yong Liu
 
 import torch
-from torch import nn
+from torch import dropout, nn
 from collections import OrderedDict
 from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
 
 from linformer_pytorch import MHAttention,Linformer,LinearAttentionHead
+from modules.NextVLAD import NeXtVLAD
+from modules.ChannelSELayer import ChannelSELayer
+from modules.TCN import TemporalConvNet
 
 class LayerNorm(nn.Module):
     def __init__(self, hidden_size, eps=1e-12):
@@ -133,10 +136,11 @@ class visual_prompt(nn.Module):
         super().__init__()
         self.sim_header = sim_head
         self.T = T
-        assert sim_head in ["meanP", "LSTM", "Transf", "Conv_1D", "Transf_cls","new_net","RNN"]
+        # assert sim_head in ["meanP", "LSTM", "Transf", "Conv_1D", "Transf_cls","new_net","RNN","BiLSTM"]
 
         if self.sim_header == "LSTM" or self.sim_header == "Transf" or self.sim_header == "Transf_cls" or self.sim_header == "Conv_1D" or self.sim_header == "new_net"\
-            or self.sim_header == "RNN":
+            or self.sim_header == "RNN" or self.sim_header == "BiLSTM" or self.sim_header == "NextVLAD" or self.sim_header =="GRU"\
+                or self.sim_header=="TCN":
             self.embed_dim = clip_state_dict["text_projection"].shape[1]
             context_length = clip_state_dict["positional_embedding"].shape[0]
             vocab_size = clip_state_dict["token_embedding.weight"].shape[0]
@@ -148,13 +152,19 @@ class visual_prompt(nn.Module):
                 set(k.split(".")[2] for k in clip_state_dict if k.startswith(f"transformer.resblocks")))
 
             self.frame_position_embeddings = nn.Embedding(context_length, self.embed_dim)
+        if self.sim_header =="TCN":
+            self.TCN = TemporalConvNet(num_inputs=8,num_channels=[self.embed_dim,self.embed_dim,8])
+        if self.sim_header == "NextVLAD":
+            self.nextVLAD = NeXtVLAD(feature_size=512,output_size=512,dropout_prob=0.0)
+        if self.sim_header == "GRU":
+            self.lstm_visual = nn.GRU(input_size=self.embed_dim, hidden_size=self.embed_dim,
+                                       batch_first=True, bidirectional=False, num_layers=2,dropout=0)
+        if self.sim_header == "ChannelSELayer":
+            self.ChannelSELayer = ChannelSELayer(num_channels=16)
         if self.sim_header == "Transf" :
             self.transformer = TemporalTransformer(width=self.embed_dim, layers=6, heads=transformer_heads)
             print('layer=6')
         if self.sim_header == "new_net":
-            # self.new_net = Transformer(dim=embed_dim,heads=transformer_heads,dim_head=64,depth=6,mlp_dim=2048)
-            # self.new_net = DeepViT()
-            # 7x7 patches + 1 cls-token
             self.new_net = Linformer(
                 input_size=self.embed_dim, # Dimension 1 of the input
                 channels=16, # Dimension 2 of the input
@@ -172,6 +182,9 @@ class visual_prompt(nn.Module):
         if self.sim_header == "LSTM":
             self.lstm_visual = nn.LSTM(input_size=self.embed_dim, hidden_size=self.embed_dim,
                                        batch_first=True, bidirectional=False, num_layers=1)
+        if self.sim_header == "BiLSTM":
+            self.lstm_visual = nn.LSTM(input_size=self.embed_dim, hidden_size=self.embed_dim,
+                                       batch_first=True, bidirectional=True, num_layers=1)
 
         if self.sim_header == "RNN":
             self.rnn_visual = nn.RNN(input_size=self.embed_dim, hidden_size=self.embed_dim,
@@ -232,8 +245,22 @@ class visual_prompt(nn.Module):
             x = self.transformer(x)
             x = x.permute(1, 0, 2)  # LND -> NLD
             x = x.type(x_original.dtype) + x_original
-
-        elif self.sim_header == "LSTM":
+        elif self.sim_header == "NextVLAD":
+            x_original = x
+            y = self.nextVLAD(x.float())
+            x= y
+            return x.type(x_original.dtype)
+        elif self.sim_header == "ChannelSELayer":
+            x_original = x
+            y = self.ChannelSELayer(x.float())
+            x= y
+            return x.type(x_original.dtype)
+        elif self.sim_header == "TCN":
+            x_original = x
+            y = self.TCN(x.float())
+            x= y
+            x=x.type(x_original.dtype) + x_original
+        elif self.sim_header == "LSTM" or self.sim_header == "BiLSTM" or self.sim_header=="GRU":
             x_original = x
             x, _ = self.lstm_visual(x.float())
             self.lstm_visual.flatten_parameters()
@@ -249,26 +276,12 @@ class visual_prompt(nn.Module):
             x_original = x
             return self.transformer(x).type(x_original.dtype)
         elif self.sim_header == "new_net":
-            self.new_net = Linformer(
-                input_size=self.embed_dim, # Dimension 1 of the input
-                channels=b, # Dimension 2 of the input
-                dim_d=128, # The inner dimension of the attention heads
-                dim_k=128, # The second dimension of the P_bar matrix from the paper
-                dim_ff=128, # Dimension in the feed forward network
-                dropout_ff=0.15, # Dropout for feed forward network
-                nhead= self.h , # Number of attention heads
-                depth=2, # How many times to run the model
-                dropout=0.1, # How much dropout to apply to P_bar after softmax
-                activation="gelu", # What activation to use. Currently, only gelu and relu supported, and only on ff network.
-                checkpoint_level="C2", # What checkpoint level to use. For more information, see below.
-            ).cuda()
             
             x_original = x
-            x=x.permute(1,2,0)
+            x=x.permute(0,2,1)
             y=self.new_net(x.float())
             x=y
-
-            x=x.permute(2,0,1)
+            x=x.permute(0,1,2)
             x = x.type(x_original.dtype) + x_original
 
         else:

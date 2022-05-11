@@ -3,7 +3,6 @@
 # Mengmeng Wang, Jiazheng Xing, Yong Liu
 
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 import clip
 import torch.nn as nn
 from datasets import Action_DATASETS
