@@ -11,6 +11,7 @@ from linformer_pytorch import MHAttention,Linformer,LinearAttentionHead
 from modules.NextVLAD import NeXtVLAD
 from modules.ChannelSELayer import ChannelSELayer
 from modules.TCN import TemporalConvNet
+from modules.Sequencer2DBlock import VanillaSequencerBlock as Sequencer
 
 class LayerNorm(nn.Module):
     def __init__(self, hidden_size, eps=1e-12):
@@ -140,7 +141,7 @@ class visual_prompt(nn.Module):
 
         if self.sim_header == "LSTM" or self.sim_header == "Transf" or self.sim_header == "Transf_cls" or self.sim_header == "Conv_1D" or self.sim_header == "new_net"\
             or self.sim_header == "RNN" or self.sim_header == "BiLSTM" or self.sim_header == "NextVLAD" or self.sim_header =="GRU"\
-                or self.sim_header=="TCN":
+                or self.sim_header=="TCN" or self.sim_header=="Sequencer":
             self.embed_dim = clip_state_dict["text_projection"].shape[1]
             context_length = clip_state_dict["positional_embedding"].shape[0]
             vocab_size = clip_state_dict["token_embedding.weight"].shape[0]
@@ -152,6 +153,8 @@ class visual_prompt(nn.Module):
                 set(k.split(".")[2] for k in clip_state_dict if k.startswith(f"transformer.resblocks")))
 
             self.frame_position_embeddings = nn.Embedding(context_length, self.embed_dim)
+        if self.sim_header=="Sequencer":
+            self.Sequencer = Sequencer(dim=512,hidden_size=512)
         if self.sim_header =="TCN":
             self.TCN = TemporalConvNet(num_inputs=8,num_channels=[self.embed_dim,self.embed_dim,8])
         if self.sim_header == "NextVLAD":
@@ -174,9 +177,9 @@ class visual_prompt(nn.Module):
                 dropout_ff=0.15, # Dropout for feed forward network
                 nhead=transformer_heads, # Number of attention heads
                 depth=2, # How many times to run the model
-                dropout=0.1, # How much dropout to apply to P_bar after softmax
+                dropout=0, # How much dropout to apply to P_bar after softmax
                 activation="gelu", # What activation to use. Currently, only gelu and relu supported, and only on ff network.
-                checkpoint_level="C2", # What checkpoint level to use. For more information, see below.
+                checkpoint_level="C1", # What checkpoint level to use. For more information, see below.
             )
             # pass
         if self.sim_header == "LSTM":
@@ -282,6 +285,11 @@ class visual_prompt(nn.Module):
             y=self.new_net(x.float())
             x=y
             x=x.permute(0,2,1)
+            x = x.type(x_original.dtype) + x_original
+        elif self.sim_header == "Sequencer":
+            x_original = x
+            y=self.Sequencer(x.float())
+            x=y
             x = x.type(x_original.dtype) + x_original
 
         else:
