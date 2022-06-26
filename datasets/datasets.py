@@ -35,8 +35,8 @@ class Action_DATASETS(data.Dataset):
                  image_tmpl='img_{:05d}.jpg', transform=None,
                  random_shift=True, test_mode=False, index_bias=1):
 
-        self.list_file = list_file
-        self.num_segments = num_segments
+        self.list_file = list_file # 数据库
+        self.num_segments = num_segments # 帧数
         self.seg_length = new_length
         self.image_tmpl = image_tmpl
         self.transform = transform

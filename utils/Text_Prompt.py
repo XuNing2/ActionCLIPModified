@@ -13,10 +13,13 @@ def text_prompt(data):
                 f"The man is {{}}", f"The woman is {{}}"]
     text_dict = {}
     num_text_aug = len(text_aug)
-
+    
+    text_vis = {}
     for ii, txt in enumerate(text_aug):
+        text_vis[ii] = [txt.format(c) for i, c in data.classes]
         text_dict[ii] = torch.cat([clip.tokenize(txt.format(c)) for i, c in data.classes])
 
     classes = torch.cat([v for k, v in text_dict.items()])
+    classes_vis = [v for k, v in text_vis.items()]
 
-    return classes, num_text_aug,text_dict
+    return classes, num_text_aug,text_dict, text_vis

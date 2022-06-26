@@ -133,7 +133,7 @@ class NewNet(nn.Module):
 
 
 class visual_prompt(nn.Module):
-    def __init__(self, sim_head, clip_state_dict, T):
+    def __init__(self, sim_head, clip_state_dict, T,batchsize):
         super().__init__()
         self.sim_header = sim_head
         self.T = T
@@ -165,8 +165,9 @@ class visual_prompt(nn.Module):
         if self.sim_header == "ChannelSELayer":
             self.ChannelSELayer = ChannelSELayer(num_channels=16)
         if self.sim_header == "Transf" :
-            self.transformer = TemporalTransformer(width=self.embed_dim, layers=6, heads=transformer_heads)
-            print('layer=6')
+            layers = 6
+            self.transformer = TemporalTransformer(width=self.embed_dim, layers=layers, heads=transformer_heads)
+            print('layer='+str(layers))
         if self.sim_header == "new_net":
             self.new_net = Linformer(
                 input_size=self.embed_dim, # Dimension 1 of the input
@@ -176,10 +177,10 @@ class visual_prompt(nn.Module):
                 dim_ff=128, # Dimension in the feed forward network
                 dropout_ff=0.15, # Dropout for feed forward network
                 nhead=transformer_heads, # Number of attention heads
-                depth=2, # How many times to run the model
+                depth=6, # How many times to run the model
                 dropout=0, # How much dropout to apply to P_bar after softmax
                 activation="gelu", # What activation to use. Currently, only gelu and relu supported, and only on ff network.
-                checkpoint_level="C1", # What checkpoint level to use. For more information, see below.
+                checkpoint_level="C2", # What checkpoint level to use. For more information, see below.
             )
             # pass
         if self.sim_header == "LSTM":
@@ -294,4 +295,27 @@ class visual_prompt(nn.Module):
 
         else:
             raise ValueError('Unknown optimizer: {}'.format(self.sim_header))
+        return x.mean(dim=1, keepdim=False)
+
+class Early_fusion(nn.Module):
+
+    def __init__(self):
+        super().__init__()
+        self.lstm_visual = nn.LSTM(input_size=8, hidden_size=8, batch_first=True, bidirectional=False, num_layers=1)
+
+    def forward(self, x):
+        x_original = input
+
+        b, t, c, h, w = x.size()
+        x = x.permute(0, 2, 3, 4, 1)
+        x = x.reshape(-1, w, t)
+
+        x, _ = self.lstm_visual(x.float())
+
+        x = x.reshape(b, c, h, w, t)
+        x = x.permute(0,4,1,2,3)
+
+        self.lstm_visual.flatten_parameters()
+        x = torch.cat((x, x_original[:, x.size(1):, ...].contiguous()), dim=1)
+        x = x.type(x_original.dtype) + x_original
         return x.mean(dim=1, keepdim=False)

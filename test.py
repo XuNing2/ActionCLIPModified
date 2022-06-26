@@ -111,7 +111,7 @@ def main():
     clip_state_dict = model.state_dict()
     transform_val = get_augmentation(False, config)
 
-    fusion_model = visual_prompt(config.network.sim_header, clip_state_dict, config.data.num_segments)
+    fusion_model = visual_prompt(config.network.sim_header, clip_state_dict, config.data.num_segments,config.data.batchsize)
 
     model_text = TextCLIP(model)
     model_image = ImageCLIP(model)

@@ -1,5 +1,5 @@
 pretrain: 
-resume:
+resume: 
 seed: 1024
 data:
     dataset: hmdb51
@@ -20,20 +20,21 @@ data:
     randaug:
         N: 2 #2
         M: 9  #9
+    random_shift: True
 network:
     arch: ViT-B/16  #ViT-B/32 ViT-B/16
     init: True 
     drop_out: 0.0 
     emb_dropout: 0.0 
     type: clip_hmdb
-    sim_header: "TCN"  #Transf   meanP   LSTM   Transf_cls Conv_1D RNN new_net BiLSTM ChannelSELayer GRU TCN
+    sim_header: "LSTM"  #Transf   meanP   LSTM   Transf_cls Conv_1D RNN new_net BiLSTM ChannelSELayer GRU TCN Sequencer
     note: ""
     fix_text: False
     fix_img: False
     describe:
 solver:
     type: cosine
-    epochs: 25
+    epochs: 26
     start_epoch: 0
     epoch_offset: 0
     optim: adamw
@@ -45,7 +46,7 @@ solver:
     lr_decay_factor: 0.1
     clip_gradient: 20
     loss_type: nll
-    evaluate: False
+    evaluate: True
     ratio: 1
     f_ratio: 10
 logging:

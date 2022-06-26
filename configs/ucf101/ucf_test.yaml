@@ -1,4 +1,4 @@
-pretrain:  '/public/home/ock/video_clip/video-clip/clip_models/vit16_8f/model_best.pt'
+pretrain:  '/home/cike/projects/ActionCLIPModified/exp/clip_hmdb/ViT-B/16/hmdb51/20220512_113454/model_best.pt'
 seed: 1024
 data:
     dataset: ucf101

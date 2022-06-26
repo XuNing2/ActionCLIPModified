@@ -1,4 +1,4 @@
-pretrain: /home/cike/projects/ActionCLIPModified/exp/clip_hmdb/ViT-B/16/hmdb51/20220507_073036/model_best.pt
+pretrain: /home/cike/projects/ActionCLIPModified/exp/clip_ucf/ViT-B/16/ucf101/20220517_080955/model_best.pt
 seed: 1024
 data:
     dataset: hmdb51

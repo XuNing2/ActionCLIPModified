@@ -7,7 +7,7 @@ data:
     num_segments: 8
     seg_length: 1
     split: 1
-    batch_size: 32
+    batch_size: 16
     workers: 1
     gpus: 2
     num_classes: 101
@@ -26,17 +26,17 @@ network:
     drop_out: 0.0 
     emb_dropout: 0.0 
     type: clip_ucf
-    sim_header: "Transf"  #Transf   meanP   LSTM   Transf_cls Conv_1D
+    sim_header: "Linformer"  #Transf   meanP   LSTM   Transf_cls Conv_1D new_net NextVLAD Linformer
     fix_text: False
     fix_img: False
     describe:
 solver:
     type: cosine
-    epochs: 50
+    epochs: 25
     start_epoch: 0
     epoch_offset: 0
     optim: adamw
-    lr: 5.e-6
+    lr: 3.e-6
     lr_warmup_step: 5
     momentum: 0.9
     weight_decay: 0.2

@@ -2,8 +2,11 @@
 # arXiv:
 # Mengmeng Wang, Jiazheng Xing, Yong Liu
 
+import imp
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "1,6"
+
+from modules.Early_fusion import Late_fusion
+os.environ["CUDA_VISIBLE_DEVICES"] = "4,5,0,3"
 import torch.nn as nn
 from datasets import Action_DATASETS
 from torch.utils.data import DataLoader
@@ -87,12 +90,19 @@ def main():
     print('train transforms: {}'.format(transform_train.transforms))
     print('val transforms: {}'.format(transform_val.transforms))
 
-    fusion_model = visual_prompt(config.network.sim_header,clip_state_dict,config.data.num_segments)
+    fusion_model = visual_prompt(config.network.sim_header,clip_state_dict,config.data.num_segments,config.data.batchsize)
+    from modules.Early_fusion import Early_fusion
+    early_fusion4 = Early_fusion(num_segments=2)
+    early_fusion8 = Early_fusion(num_segments=8)
+    late_fusion = Late_fusion(num_segments=4)
     model_text = TextCLIP(model)
     model_image = ImageCLIP(model)
     model_text = torch.nn.DataParallel(model_text).cuda()
     model_image = torch.nn.DataParallel(model_image).cuda()
     fusion_model = torch.nn.DataParallel(fusion_model).cuda()
+    early_fusion4 = torch.nn.DataParallel(early_fusion4).cuda()
+    early_fusion8 = torch.nn.DataParallel(early_fusion8).cuda()
+    late_fusion = torch.nn.DataParallel(late_fusion).cuda()
 
     # Hooks into the torch model to collect gradients and the topology.
     wandb.watch(model)
@@ -116,9 +126,21 @@ def main():
     loss_txt = KLLoss()
 
     start_epoch = config.solver.start_epoch
-    
 
-    classes, num_text_aug, text_dict = text_prompt(train_data)
+    if config.resume:
+        if os.path.isfile(config.resume):
+            print(("=> loading checkpoint '{}'".format(config.resume)))
+            # torch.load 用来加载 torch.save 的对象
+            checkpoint = torch.load(config.resume)
+            model.load_state_dict(checkpoint['model_state_dict'])
+            fusion_model.load_state_dict(checkpoint['fusion_model_state_dict'])
+            start_epoch = checkpoint['epoch']
+            print(("=> loaded checkpoint '{}' (epoch {})".format(config.evaluate, start_epoch)))
+            del checkpoint
+        else:
+            print(("=> no checkpoint found at '{}'".format(config.pretrain)))
+
+    classes, num_text_aug, text_dict, text_vis = text_prompt(train_data)
 
     optimizer = _optimizer(config, model, fusion_model)
     lr_scheduler = _lr_scheduler(config, optimizer)
@@ -145,12 +167,30 @@ def main():
             text_id = numpy.random.randint(num_text_aug,size=len(list_id))
             texts = torch.stack([text_dict[j][i,:] for i,j in zip(list_id,text_id)])
 
-            images= images.to(device).view(-1,c,h,w ) # omit the Image.fromarray if the images already in PIL format, change this line to images=list_image if using preprocess inside the dataset class
+            # images= images.to(device).view(-1,c,h,w ) # omit the Image.fromarray if the images already in PIL format, change this line to images=list_image if using preprocess inside the dataset class
             texts = texts.to(device)
 
-            image_embedding = model_image(images)
-            image_embedding = image_embedding.view(b,t,-1)
-            image_embedding = fusion_model(image_embedding)
+            input1, input2, input3, input4 = torch.split(images, t // 4, dim=1)
+            # input1 = input1.to(device).view(-1, c, h, w)
+            input1 = early_fusion4(input1)
+            # input2 = input2.to(device).view(-1, c, h, w)
+            input2 = early_fusion4(input2)
+            input3 = early_fusion4(input3)
+            input4 = early_fusion4(input4)
+            image_embedding1 = model_image(input1)
+            image_embedding2 = model_image(input2)
+            image_embedding3 = model_image(input3)
+            image_embedding4 = model_image(input4)
+            image_embedding = torch.stack((image_embedding1, image_embedding2,image_embedding3, image_embedding4), dim=2)
+            image_embedding = late_fusion(image_embedding)
+
+            # images = early_fusion(images)
+
+            # images = images.mean(dim=1, keepdim=False)
+
+            # image_embedding = model_image(images)
+            # image_embedding = image_embedding.view(b,t,-1)
+            # image_embedding = fusion_model(image_embedding)
 
             text_embedding = model_text(texts)
 
