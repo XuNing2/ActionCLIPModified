@@ -1,0 +1,54 @@
+pretrain: 
+resume: 
+seed: 1024
+data:
+    dataset: hmdb51
+    modality: RGB
+    num_segments: 8
+    seg_length: 1
+    split: 1
+    batch_size: 32
+    workers: 8
+    gpus: 2
+    num_classes: 51
+    image_tmpl: 'img_{:05d}.jpg'
+    train_list: '/home/cike/projects/ActionCLIPModified/lists/hmdb51/train_rgb_split1.txt' #
+    val_list: '/home/cike/projects/ActionCLIPModified/lists/hmdb51/val_rgb_split1.txt' #
+    label_list: 'lists/hmdb51_labels.csv'
+    index_bias: 1
+    input_size: 224
+    randaug:
+        N: 2 #2
+        M: 9  #9
+    random_shift: True
+network:
+    arch: ViT-B/16  #ViT-B/32 ViT-B/16
+    init: True 
+    drop_out: 0.0 
+    emb_dropout: 0.0 
+    type: clip_hmdb
+    sim_header: "LSTM"  #Transf   meanP   LSTM   Transf_cls Conv_1D RNN new_net BiLSTM ChannelSELayer GRU TCN Sequencer
+    note: "只用一帧训练"
+    fix_text: False
+    fix_img: False
+    describe:
+solver:
+    type: cosine
+    epochs: 26
+    start_epoch: 0
+    epoch_offset: 0
+    optim: adamw
+    lr: 3.e-6
+    lr_warmup_step: 5
+    momentum: 0.9
+    weight_decay: 0.2
+    lr_decay_step: 15
+    lr_decay_factor: 0.1
+    clip_gradient: 20
+    loss_type: nll
+    evaluate: False
+    ratio: 1
+    f_ratio: 10
+logging:
+    print_freq: 10
+    eval_freq: 1
